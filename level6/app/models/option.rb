@@ -4,7 +4,7 @@ module Application
   class Option
     extend Application::Record
 
-    PRICES_FOR_TYPES = { gps: 500, baby_seat: 200, additional_insurance: 1_000 }.freeze
+    PRICES_FOR_TYPES_IN_CENTS = { gps: 500, baby_seat: 200, additional_insurance: 1_000 }.freeze
     OWNER_FRIENDLY_TYPES = %w[gps baby_seat].freeze
     GETAROUND_FRIENDLY_TYPES = %w[additional_insurance].freeze
 
@@ -16,8 +16,11 @@ module Application
       @type = type
     end
 
+    scope :payable_to_owner, -> { where(type: OWNER_FRIENDLY_TYPES) }
+    scope :payable_to_getaround, -> { where(type: GETAROUND_FRIENDLY_TYPES) }
+
     def price
-      @price ||= PRICES_FOR_TYPES[type.to_sym]
+      @price ||= PRICES_FOR_TYPES_IN_CENTS[type.to_sym]
     end
   end
 end

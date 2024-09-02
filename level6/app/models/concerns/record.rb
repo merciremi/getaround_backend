@@ -8,6 +8,10 @@ module Application
   module Record
     class NotFoundError < StandardError; end
 
+    def scope(...)
+      Collection.scope(...)
+    end
+
     def find(id)
       resources = fetch(tableize(self.name))
 
@@ -20,22 +24,16 @@ module Application
 
     def where(args)
       resources = fetch(tableize(self.name))
+      resources = resources.map { |resource_attributes| new(*resource_attributes.values) }
 
-      filtered_resources =
-        resources.select do |resource|
-          args.all? do |column_name, value|
-            value = [value] unless value.is_a?(Array)
-            value.include?(resource[column_name.to_s])
-          end
-        end
-
-      filtered_resources.map { |resource_attributes| new(*resource_attributes.values) }
+      Collection.new(self, resources).where(args)
     end
 
     def all
       resources = fetch(tableize(self.name))
+      resources = resources.map { |resource_attributes| new(*resource_attributes.values) }
 
-      resources.map { |resource_attributes| new(*resource_attributes.values) }
+      Collection.new(self, resources)
     end
 
     private
@@ -48,31 +46,38 @@ module Application
       JSON.parse(File.read(INPUT_FILE_PATH))[table_name]
     end
 
+    # Documentation by Remi - 2 Sep 2024
+    #
+    # The class Record::Collection is responsible for encapsulating a collection of records.
+    # It allows us to define chainable scopes or chainable where methods on records,
+    # making the coupling between different models looser.
+    #
+    # Also implements other methods usually defined on Array.
     class Collection
       attr_reader :records
 
-      def initialize(klass, filters = {}, records = nil)
+      def initialize(klass, records = nil, filters = {})
         @klass = klass
-        @filters = filters
         @records = records
+        @filters = filters
+      end
+
+      def self.scope(name, block)
+        define_method(name, &block)
       end
 
       def where(args)
         new_filters = @filters.merge(args)
 
-        resources = fetch(tableize(@klass))
-
-        filtered_resources =
-          resources.select do |resource|
+        filtered_records =
+          records.select do |record|
             new_filters.all? do |column_name, value|
               value = [value] unless value.is_a?(Array)
-              value.include?(resource[column_name.to_s])
+              value.include? record.send(column_name)
             end
           end
 
-        objects = filtered_resources.map { |resource_attributes| @klass.new(*resource_attributes.values) }
-
-        self.class.new(@klass, new_filters, objects)
+        self.class.new(@klass, filtered_records)
       end
 
       def map(&block)
@@ -84,17 +89,11 @@ module Application
       end
 
       def +(other)
-        self.class.new(@klass, {}, records + other.records)
+        self.class.new(@klass, records + other.records)
       end
 
-      private
-
-      def tableize(klass_name)
-        "#{klass_name.to_s.split('::').last.downcase}s"
-      end
-
-      def fetch(table_name)
-        JSON.parse(File.read(INPUT_FILE_PATH))[table_name]
+      def first
+        records.first
       end
     end
   end

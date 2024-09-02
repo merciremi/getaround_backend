@@ -26,7 +26,11 @@ module Application
     end
 
     def drivy_fee
-      @drivy_fee ||= base_amount - insurance_fee - assistance_fee + rental.options_payable_to_getaround_price
+      # Drive fee could be negative if rental.duration is long AND car.price_per_day is low
+      #
+      # We might want to add a flat fee instead as a fallback, or validation on
+      # car and rentals.
+      @drivy_fee ||= base_amount - insurance_fee - assistance_fee + rental_options
     end
 
     def to_h
@@ -41,6 +45,10 @@ module Application
 
     def rental
       @rental ||= Rental.find(rental_id)
+    end
+
+    def rental_options
+      rental.options.payable_to_getaround.sum(&:price) * rental.duration
     end
 
     def base_amount

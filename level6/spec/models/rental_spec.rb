@@ -87,7 +87,7 @@ RSpec.describe Application::Rental do
     subject(:all) { described_class.all }
 
     it 'returns a collection of rentals', :aggregate_failures do
-      expect(all).to be_an(Array)
+      expect(all).to be_an(Application::Record::Collection)
       expect(all.first).to be_an(Application::Rental)
     end
   end

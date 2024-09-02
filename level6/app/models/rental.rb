@@ -12,6 +12,8 @@ module Application
   #
   # For convenience ORM-like methods, @see concerns/record
   class Rental
+    class StartDateAfterEndDate < StandardError; end
+
     extend Application::Record
 
     attr_reader :id, :car_id, :start_date, :end_date, :distance, :commission, :discount_schedule, :transactions
@@ -25,38 +27,36 @@ module Application
 
       @commission = Commission.new(self.id)
       @discount_schedule = DiscountSchedule.new(duration)
-
-      @transactions = []
     end
 
     def car
       @car ||= Car.find(car_id)
     end
 
-    def duration = (start_date..end_date).count
+    def duration
+      raise StartDateAfterEndDate, 'Start date is after end date' if start_date > end_date
 
-    def base_price = @base_price ||= duration_price + distance_price
+      (start_date..end_date).count
+    end
 
-    def price = @price ||= base_price + options_price
+    def base_price
+      @base_price ||= duration_price + distance_price
+    end
+
+    def price
+      @price ||= base_price + options_price
+    end
 
     def net_payout
       @net_payout ||= price - commission.amount
     end
 
     def transactions
-      return @transactions if @transactions.any?
-
-      debit_transactions + credit_transactions
-
-      @transactions
+      @transactions ||= debit_transactions + credit_transactions
     end
 
     def options
-      @options ||= options_payable_to_owner + options_payable_to_getaround
-    end
-
-    def options_payable_to_getaround_price
-      options_payable_to_getaround.sum(&:price) * duration
+      @options ||= Option.where(rental_id: id)
     end
 
     private
@@ -81,7 +81,11 @@ module Application
     # The following amounts are taken into account:
     # - rental.price
     def debit_transactions
-      @transactions << Transaction.new(id, :driver, :debit, price)
+      @_debit_transactions ||= begin
+        transactions = []
+
+        transactions << Transaction.new(id, :driver, :debit, price)
+      end
     end
 
     # Documentation by Remi - 22 Aug 2024
@@ -92,25 +96,19 @@ module Application
     # - commission.assistance_fee
     # - commission.drivy_fee + options_payable_to_getaround
     def credit_transactions
-      @transactions << Transaction.new(id, :owner, :credit, net_payout)
+      @_credit_transactions ||= begin
+        transactions = []
 
-      [:insurance, :assistance, :drivy].each do |recipient|
-        fee_amount = commission.send("#{recipient}_fee")
+        transactions << Transaction.new(id, :owner, :credit, net_payout)
 
-        @transactions << Transaction.new(id, recipient, :credit, fee_amount)
+        [:insurance, :assistance, :drivy].each do |recipient|
+          fee_amount = commission.send("#{recipient}_fee")
+
+          transactions << Transaction.new(id, recipient, :credit, fee_amount)
+        end
+
+        transactions
       end
-    end
-
-    # Documentation by Remi - 22 Aug 2024
-    #
-    # A scope would limit the coupling between Rental and Option but it'd probably need
-    # an encapsulating abstraction for collections.
-    def options_payable_to_owner
-      @options_payable_to_owner ||= Option.where(rental_id: id, type: Option::OWNER_FRIENDLY_TYPES)
-    end
-
-    def options_payable_to_getaround
-      @options_payable_to_getaround ||= Option.where(rental_id: id, type: Option::GETAROUND_FRIENDLY_TYPES)
     end
   end
 end
